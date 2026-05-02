@@ -234,7 +234,7 @@ const VALID_TZ=TZ_LIST.map(t=>t.tz);
 function load(){try{const r=localStorage.getItem(STORAGE_KEY);if(r)return JSON.parse(r);}catch(e){}return[];}
 function save(){try{localStorage.setItem(STORAGE_KEY,JSON.stringify(clients));}catch(e){}}
 
-let clients=load();
+let clients=load().sort((a,b)=>a.name.toLowerCase().localeCompare(b.name.toLowerCase()));
 let nextId=clients.length?Math.max(...clients.map(c=>c.id))+1:1;
 let nextColor=clients.length?(Math.max(...clients.map(c=>c.colorIdx))+1)%COLORS.length:0;
 let globalOffset=0;
@@ -307,6 +307,7 @@ function addClient(name,tz,silent){
   if(!name||!tz){if(!silent)alert('Please enter a name and select a time zone.');return false;}
   clients.push({id:nextId++,name,tz,colorIdx:nextColor%COLORS.length});
   nextColor=(nextColor+1)%COLORS.length;
+  clients.sort((a,b)=>a.name.toLowerCase().localeCompare(b.name.toLowerCase()));
   save();
   if(!silent){document.getElementById('clientName').value='';document.getElementById('tzSelect').value='';render();}
   return true;
@@ -426,44 +427,70 @@ function render(){
 
 function exportXLSX(){
   const wb=XLSX.utils.book_new();
-  const ws1=XLSX.utils.aoa_to_sheet([['name','timezone'],...clients.map(c=>[c.name,c.tz])]);
-  ws1['!cols']=[{wch:28},{wch:24}];
+  const allZones=[...AMERICAS,...EUROPE,...ASIA,...PACIFIC];
+  // export label name (not IANA code) so reimport works directly
+  const ws1=XLSX.utils.aoa_to_sheet([
+    ['name','timezone'],
+    ...clients.map(c=>{
+      const z=allZones.find(x=>x.tz===c.tz);
+      return [c.name, z?z.label:c.tz];
+    })
+  ]);
+  ws1['!cols']=[{wch:32},{wch:30}];
   XLSX.utils.book_append_sheet(wb,ws1,'My Clients');
   const ws2=XLSX.utils.aoa_to_sheet([
-    ['City / Region','Abbreviation','Timezone code (use in the timezone column)'],
-    ...TZ_LIST.map(t=>[t.label,tzShort(t.tz),t.tz])
+    ['Timezone name (use this exactly in the timezone column)'],
+    ...allZones.map(z=>[z.label])
   ]);
-  ws2['!cols']=[{wch:26},{wch:14},{wch:36}];
+  ws2['!cols']=[{wch:42}];
   XLSX.utils.book_append_sheet(wb,ws2,'Timezone Cheat Sheet');
   XLSX.writeFile(wb,'my-clients.xlsx');
-  showToast('XLSX exported — see the "Timezone Cheat Sheet" tab for codes.');
+  showToast('XLSX exported — timezone names are ready to use directly in CSV.');
 }
 
 function importCSV(input){
   const file=input.files[0];if(!file)return;
+  if(!file.name.toLowerCase().endsWith('.csv')){
+    showToast('Please select a .csv file.','error');
+    input.value='';return;
+  }
   const reader=new FileReader();
+  reader.onerror=()=>{showToast('Could not read file. Try again.','error');};
   reader.onload=e=>{
-    const lines=e.target.result.trim().split('\n');
-    let added=0,skipped=0,errors=0;
-    lines.forEach((line,i)=>{
-      if(i===0&&line.toLowerCase().includes('name'))return;
-      const parts=line.split(',');
-      if(parts.length<2){errors++;return;}
-      const name=parts[0].trim().replace(/^"|"$/g,'').replace(/""/g,'"');
-      const tz=parts[1].trim().replace(/^"|"$/g,'');
-      if(!name||!tz||!VALID_TZ.includes(tz)){errors++;return;}
-      if(clients.some(c=>c.name.toLowerCase()===name.toLowerCase()&&c.tz===tz)){skipped++;return;}
-      addClient(name,tz,true);added++;
-    });
-    save();render();
-    const msg=[];
-    if(added)msg.push(`${added} client${added>1?'s':''} added`);
-    if(skipped)msg.push(`${skipped} already existed`);
-    if(errors)msg.push(`${errors} row${errors>1?'s':''} skipped`);
-    showToast(msg.join(' · ')||'Nothing new to import.',added>0?'success':'error');
+    try{
+      const raw=e.target.result.replace(/\r\n/g,'\n').replace(/\r/g,'\n');
+      const lines=raw.trim().split('\n').filter(l=>l.trim().length>0);
+      if(lines.length===0){showToast('File appears empty.','error');return;}
+      let added=0,skipped=0,errors=0;
+      lines.forEach((line,i)=>{
+        if(i===0&&line.toLowerCase().startsWith('name'))return;
+        const parts=line.match(/(".*?"|[^,]+)(?=,|$)/g)||line.split(',');
+        if(!parts||parts.length<2){errors++;return;}
+        const name=parts[0].trim().replace(/^"|"$/g,'').replace(/""/g,'"').trim();
+        const label=parts[1].trim().replace(/^"|"$/g,'').trim();
+        if(!name||!label){errors++;return;}
+        // look up IANA tz from plain label
+        const allZones=[...AMERICAS,...EUROPE,...ASIA,...PACIFIC];
+        const match=allZones.find(z=>z.label.toLowerCase()===label.toLowerCase());
+        if(!match){
+          console.warn('Unknown timezone label:',label);
+          errors++;return;
+        }
+        if(clients.some(c=>c.name.toLowerCase()===name.toLowerCase()&&c.tz===match.tz)){skipped++;return;}
+        addClient(name,match.tz,true);added++;
+      });
+      save();render();
+      const msg=[];
+      if(added)msg.push(`${added} client${added>1?'s':''} added`);
+      if(skipped)msg.push(`${skipped} already existed`);
+      if(errors)msg.push(`${errors} row${errors>1?'s':''} skipped — check timezone names`);
+      showToast(msg.join(' · ')||'Nothing new to import.',added>0?'success':'error');
+    }catch(err){
+      showToast('Error reading CSV: '+err.message,'error');
+    }
     input.value='';
   };
-  reader.readAsText(file);
+  reader.readAsText(file,'UTF-8');
 }
 
 const dz=document.getElementById('dropZone');
