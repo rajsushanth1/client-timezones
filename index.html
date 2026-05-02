@@ -1,0 +1,599 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Client Time Zones</title>
+<style>
+  *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+  :root {
+    --bg: #ffffff; --bg2: #f5f5f3; --bg3: #efefed;
+    --text: #1a1a18; --text2: #6b6b67; --text3: #a0a09c;
+    --border: rgba(0,0,0,0.12); --border2: rgba(0,0,0,0.2);
+    --radius: 8px; --radius-lg: 12px;
+    --purple: #7F77DD; --purple-bg: #EEEDFE; --purple-text: #534AB7;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root {
+      --bg: #1c1c1a; --bg2: #252523; --bg3: #2e2e2b;
+      --text: #f0f0ec; --text2: #9a9a96; --text3: #6a6a66;
+      --border: rgba(255,255,255,0.1); --border2: rgba(255,255,255,0.18);
+    }
+  }
+
+  body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; background: var(--bg3); color: var(--text); min-height: 100vh; }
+
+  /* ── sticky header ── */
+  .sticky-header {
+    position: sticky; top: 0; z-index: 100;
+    background: var(--bg3);
+    padding: 12px 1rem 10px;
+    border-bottom: 0.5px solid var(--border);
+  }
+  .container { max-width: 960px; margin: 0 auto; }
+
+  /* top bar */
+  .top-bar { display: flex; align-items: center; justify-content: space-between; margin-bottom: 8px; }
+  .top-bar h1 { font-size: 16px; font-weight: 500; }
+  .ist-pill { font-size: 12px; color: var(--text2); background: var(--bg2); padding: 4px 12px; border-radius: 20px; border: 0.5px solid var(--border); }
+
+  /* slider panel — compact */
+  .slider-panel { background: var(--bg2); border: 0.5px solid var(--border); border-radius: var(--radius-lg); padding: 8px 14px; margin-bottom: 8px; }
+  .slider-top { display: flex; align-items: center; gap: 10px; margin-bottom: 5px; }
+  .slider-label { font-size: 12px; color: var(--text2); font-weight: 500; white-space: nowrap; }
+  .offset-val { font-size: 13px; font-weight: 500; color: var(--text); min-width: 40px; }
+  .ist-travel-inline { font-size: 12px; color: var(--text3); flex: 1; }
+  .ist-travel-inline strong { color: var(--text2); font-weight: 500; }
+  .reset-btn { font-size: 11px; color: var(--purple-text); background: var(--purple-bg); border: none; border-radius: 5px; padding: 2px 9px; cursor: pointer; opacity: 0; transition: opacity 0.15s; white-space: nowrap; }
+  .reset-btn.visible { opacity: 1; }
+  .slider-row { display: flex; align-items: center; gap: 8px; }
+  .slider-row span { font-size: 11px; color: var(--text3); min-width: 26px; }
+  .slider-row span:last-child { text-align: right; }
+  input[type=range] { flex: 1; cursor: pointer; accent-color: var(--purple); }
+
+  /* single toolbar row */
+  .toolbar { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
+  .toolbar-left { display: flex; align-items: center; gap: 6px; flex: 1; min-width: 0; }
+  .toolbar-right { display: flex; align-items: center; gap: 6px; flex-shrink: 0; }
+
+  input.tb, select.tb {
+    height: 30px; font-size: 13px; padding: 0 8px; border-radius: var(--radius);
+    border: 0.5px solid var(--border2); background: var(--bg); color: var(--text); outline: none;
+  }
+  input.tb { width: 130px; }
+  select.tb { width: 175px; }
+  input.tb:focus, select.tb:focus { border-color: var(--purple); box-shadow: 0 0 0 2px rgba(127,119,221,0.12); }
+
+  .btn { height: 30px; padding: 0 12px; font-size: 12px; font-weight: 500; border-radius: var(--radius); border: 0.5px solid var(--border2); background: var(--bg); color: var(--text); cursor: pointer; transition: background 0.15s; white-space: nowrap; display: inline-flex; align-items: center; gap: 5px; }
+  .btn:hover { background: var(--bg2); }
+  .btn-primary { background: var(--purple-bg); color: var(--purple-text); border-color: transparent; }
+  .btn-primary:hover { background: #DDDCFC; }
+
+  .drop-zone { border: 1.5px dashed var(--border2); border-radius: var(--radius); padding: 0 12px; height: 30px; font-size: 12px; color: var(--text2); cursor: pointer; display: inline-flex; align-items: center; gap: 6px; transition: border-color 0.15s, background 0.15s; }
+  .drop-zone:hover, .drop-zone.drag-over { border-color: var(--purple); background: var(--purple-bg); color: var(--purple-text); }
+  .drop-zone input[type=file] { display: none; }
+
+  /* save note inside header */
+  .save-note { font-size: 11px; color: var(--text3); display: flex; align-items: center; gap: 5px; margin-top: 6px; }
+  .save-dot { width: 5px; height: 5px; border-radius: 50%; background: #1D9E75; flex-shrink: 0; }
+
+  /* scrollable content */
+  .scroll-area { padding: 1.25rem 1rem 2rem; }
+
+  /* grid & cards */
+  .grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(200px, 1fr)); gap: 14px; }
+  .card { background: var(--bg); border: 0.5px solid var(--border); border-radius: var(--radius-lg); padding: 1rem 1.25rem; position: relative; }
+  .client-initial { width: 32px; height: 32px; border-radius: 50%; display: flex; align-items: center; justify-content: center; font-size: 12px; font-weight: 500; margin-bottom: 8px; }
+  .client-name { font-size: 14px; font-weight: 500; color: var(--text); margin-bottom: 2px; padding-right: 24px; }
+  .tz-label { font-size: 12px; color: var(--text2); margin-bottom: 12px; }
+  .client-time { font-size: 26px; font-weight: 500; color: var(--text); letter-spacing: -0.5px; margin-bottom: 2px; }
+  .client-date { font-size: 12px; color: var(--text2); }
+  .badge { font-size: 11px; padding: 2px 8px; border-radius: 10px; margin-top: 10px; display: inline-block; }
+  .diff-pos { background: #EAF3DE; color: #3B6D11; }
+  .diff-neg { background: #FAECE7; color: #993C1D; }
+  .diff-zero { background: var(--bg2); color: var(--text2); }
+
+  /* card action icons — top right, hover only */
+  .card-actions { position: absolute; top: 10px; right: 10px; display: flex; gap: 4px; opacity: 0; transition: opacity 0.15s; }
+  .card:hover .card-actions { opacity: 1; }
+  .card-icon-btn { width: 26px; height: 26px; border-radius: 6px; border: none; cursor: pointer; display: flex; align-items: center; justify-content: center; transition: background 0.15s; background: var(--bg2); }
+  .card-icon-btn:hover { background: var(--bg3); }
+  .card-icon-btn.del:hover { background: #FCEBEB; }
+  .card-icon-btn svg { display: block; }
+
+
+  /* tz picker */
+  .tz-radio-group { display: flex; flex-direction: column; gap: 2px; }
+  .tz-radio-item { display: flex; align-items: center; gap: 8px; padding: 5px 8px; border-radius: 6px; cursor: pointer; transition: background 0.12s; }
+  .tz-radio-item:hover { background: var(--bg2); }
+  .tz-radio-item input[type=radio] { accent-color: var(--purple); width: 13px; height: 13px; margin: 0; cursor: pointer; flex-shrink: 0; }
+  .tz-radio-item label { font-size: 13px; color: var(--text); cursor: pointer; white-space: nowrap; }
+  .empty { color: var(--text3); font-size: 14px; padding: 3rem; text-align: center; grid-column: 1/-1; }
+  .toast { position: fixed; bottom: 24px; right: 24px; background: var(--bg); border: 0.5px solid var(--border2); border-radius: var(--radius); padding: 10px 16px; font-size: 13px; color: var(--text); opacity: 0; transform: translateY(8px); transition: opacity 0.2s, transform 0.2s; pointer-events: none; z-index: 999; max-width: 320px; }
+  .toast.show { opacity: 1; transform: translateY(0); }
+  .toast.success { border-left: 3px solid #1D9E75; }
+  .toast.error { border-left: 3px solid #E24B4A; }
+</style>
+</head>
+<body>
+
+<div class="sticky-header">
+  <div class="container">
+
+    <div class="top-bar">
+      <h1>Client time zones</h1>
+      <span class="ist-pill" id="ist-pill">IST —</span>
+    </div>
+
+    <div class="slider-panel">
+      <div class="slider-top">
+        <span class="slider-label">Travel time</span>
+        <span class="offset-val" id="offset-val">Now</span>
+        <span class="ist-travel-inline">IST: <strong id="ist-travel">—</strong></span>
+        <button class="reset-btn" id="reset-btn" onclick="resetSlider()">Reset</button>
+      </div>
+      <div class="slider-row">
+        <span>-12h</span>
+        <input type="range" id="globalSlider" min="-720" max="2880" step="30" value="0" oninput="onGlobalSlide(this.value)">
+        <span>+48h</span>
+      </div>
+    </div>
+
+    <div class="toolbar">
+      <div class="toolbar-left">
+        <input type="text" class="tb" id="clientName" placeholder="Client name" onkeydown="if(event.key==='Enter')addClient()" />
+        <div style="position:relative;">
+          <button type="button" id="tzTrigger" onclick="toggleTZPicker()" style="width:175px;height:30px;font-size:13px;padding:0 8px;border-radius:var(--radius);border:0.5px solid var(--border2);background:var(--bg);color:var(--text);outline:none;cursor:pointer;display:flex;align-items:center;justify-content:space-between;gap:6px;">
+            <span id="tzTriggerLabel" style="color:var(--text3);overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-size:13px;">Time zone</span>
+            <svg width="10" height="10" viewBox="0 0 10 10" fill="none" style="flex-shrink:0"><path d="M2 3.5l3 3 3-3" stroke="var(--text2)" stroke-width="1.3" stroke-linecap="round" stroke-linejoin="round"/></svg>
+          </button>
+          <input type="hidden" id="tzSelect" value="" />
+          <div id="tzPicker" style="display:none;position:absolute;top:36px;left:0;z-index:300;background:var(--bg);border:0.5px solid var(--border2);border-radius:10px;padding:10px;width:240px;box-shadow:0 4px 16px rgba(0,0,0,0.10);">
+            <div style="font-size:11px;color:var(--text3);font-weight:500;text-transform:uppercase;letter-spacing:0.04em;margin-bottom:8px;">Americas</div>
+            <div id="americasGroup" class="tz-radio-group"></div>
+            <div id="moreZones" style="display:none;">
+              <div style="height:0.5px;background:var(--border);margin:10px 0;"></div>
+              <div style="font-size:11px;color:var(--text3);font-weight:500;text-transform:uppercase;letter-spacing:0.04em;margin-bottom:8px;">Europe</div>
+              <div class="tz-radio-group" id="europeGroup"></div>
+              <div style="height:0.5px;background:var(--border);margin:10px 0;"></div>
+              <div style="font-size:11px;color:var(--text3);font-weight:500;text-transform:uppercase;letter-spacing:0.04em;margin-bottom:8px;">Middle East & Asia</div>
+              <div class="tz-radio-group" id="asiaGroup"></div>
+              <div style="height:0.5px;background:var(--border);margin:10px 0;"></div>
+              <div style="font-size:11px;color:var(--text3);font-weight:500;text-transform:uppercase;letter-spacing:0.04em;margin-bottom:8px;">Pacific</div>
+              <div class="tz-radio-group" id="pacificGroup"></div>
+            </div>
+            <button type="button" id="moreZonesBtn" onclick="toggleMoreZones()" style="margin-top:10px;font-size:12px;color:var(--purple-text);background:var(--purple-bg);border:none;border-radius:6px;padding:4px 10px;cursor:pointer;width:100%;">+ View more zones</button>
+          </div>
+        </div>
+        <button class="btn btn-primary" onclick="addClient()">+ Add</button>
+      </div>
+      <div class="toolbar-right">
+        <label class="drop-zone" id="dropZone">
+          <svg width="12" height="12" viewBox="0 0 16 16" fill="none"><path d="M8 2v8M4 6l4 4 4-4M2 13h12" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></svg>
+          Import CSV
+          <input type="file" id="csvFile" accept=".csv" onchange="importCSV(this)" />
+        </label>
+        <button class="btn" onclick="exportXLSX()">
+          <svg width="12" height="12" viewBox="0 0 16 16" fill="none"><path d="M8 10V2M4 6l4 4 4-4M2 13h12" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></svg>
+          Export XLSX
+        </button>
+      </div>
+    </div>
+
+    <div class="save-note">
+      <span class="save-dot"></span>
+      Auto-saved in your browser. Export XLSX as a portable backup.
+    </div>
+
+  </div>
+</div>
+
+<div class="scroll-area">
+  <div class="container">
+    <div class="grid" id="clientGrid"></div>
+  </div>
+</div>
+
+<div class="toast" id="toast"></div>
+
+<script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
+<script>
+const STORAGE_KEY='tz_dashboard_v2';
+const COLORS=[
+  {bg:'#EEEDFE',text:'#534AB7'},{bg:'#E1F5EE',text:'#0F6E56'},{bg:'#FAECE7',text:'#993C1D'},
+  {bg:'#FBEAF0',text:'#993556'},{bg:'#E6F1FB',text:'#185FA5'},{bg:'#EAF3DE',text:'#3B6D11'},
+  {bg:'#FAEEDA',text:'#854F0B'},{bg:'#FCEBEB',text:'#A32D2D'}
+];
+const TZ_LIST=[
+  {region:'Americas',label:'Eastern Time',tz:'America/New_York'},
+  {region:'Americas',label:'Central Time',tz:'America/Chicago'},
+  {region:'Americas',label:'Mountain Time',tz:'America/Denver'},
+  {region:'Americas',label:'Pacific Time',tz:'America/Los_Angeles'},
+  {region:'Americas',label:'Eastern Time (Canada)',tz:'America/Toronto'},
+  {region:'Americas',label:'Pacific Time (Canada)',tz:'America/Vancouver'},
+  {region:'Americas',label:'Brasilia Time',tz:'America/Sao_Paulo'},
+  {region:'Europe',label:'Greenwich Mean Time',tz:'Europe/London'},
+  {region:'Europe',label:'Central European Time',tz:'Europe/Paris'},
+  {region:'Europe',label:'Central European Time (Germany)',tz:'Europe/Berlin'},
+  {region:'Europe',label:'Central European Time (Netherlands)',tz:'Europe/Amsterdam'},
+  {region:'Europe',label:'Central European Time (Sweden)',tz:'Europe/Stockholm'},
+  {region:'Europe',label:'Central European Time (Switzerland)',tz:'Europe/Zurich'},
+  {region:'Europe',label:'Moscow Standard Time',tz:'Europe/Moscow'},
+  {region:'Middle East & Asia',label:'Gulf Standard Time',tz:'Asia/Dubai'},
+  {region:'Middle East & Asia',label:'India Standard Time',tz:'Asia/Kolkata'},
+  {region:'Middle East & Asia',label:'Singapore Time',tz:'Asia/Singapore'},
+  {region:'Middle East & Asia',label:'Hong Kong Time',tz:'Asia/Hong_Kong'},
+  {region:'Middle East & Asia',label:'China Standard Time',tz:'Asia/Shanghai'},
+  {region:'Middle East & Asia',label:'Japan Standard Time',tz:'Asia/Tokyo'},
+  {region:'Middle East & Asia',label:'Korea Standard Time',tz:'Asia/Seoul'},
+  {region:'Pacific',label:'Australian Eastern Time',tz:'Australia/Sydney'},
+  {region:'Pacific',label:'New Zealand Standard Time',tz:'Pacific/Auckland'},
+];
+const VALID_TZ=TZ_LIST.map(t=>t.tz);
+
+function load(){try{const r=localStorage.getItem(STORAGE_KEY);if(r)return JSON.parse(r);}catch(e){}return[];}
+function save(){try{localStorage.setItem(STORAGE_KEY,JSON.stringify(clients));}catch(e){}}
+
+let clients=load();
+let nextId=clients.length?Math.max(...clients.map(c=>c.id))+1:1;
+let nextColor=clients.length?(Math.max(...clients.map(c=>c.colorIdx))+1)%COLORS.length:0;
+let globalOffset=0;
+
+function showToast(msg,type='success'){
+  const t=document.getElementById('toast');
+  t.textContent=msg;t.className='toast show '+type;
+  clearTimeout(t._t);t._t=setTimeout(()=>t.className='toast',3000);
+}
+
+function getTime(tz,em){
+  const now=new Date(Date.now()+em*60000);
+  return{
+    time:now.toLocaleTimeString('en-IN',{timeZone:tz,hour:'2-digit',minute:'2-digit',hour12:true}),
+    date:now.toLocaleDateString('en-IN',{timeZone:tz,weekday:'short',day:'numeric',month:'short',year:'numeric'})
+  };
+}
+
+function offsetDiffH(tz){
+  const now=new Date();
+  const mins=z=>{const s=now.toLocaleString('en-US',{timeZone:z,hour:'numeric',minute:'numeric',hour12:false});const p=s.split(':');return +p[0]*60+ +p[1];};
+  let d=mins(tz)-mins('Asia/Kolkata');
+  if(d>720)d-=1440;if(d<-720)d+=1440;return d/60;
+}
+
+function tzShort(tz){const s=new Date().toLocaleDateString('en-US',{timeZone:tz,timeZoneName:'short'});return s.split(', ')[1]||tz.split('/').pop();}
+function initials(n){return n.split(' ').slice(0,2).map(w=>w[0]).join('').toUpperCase();}
+function diffBadge(tz){
+  const h=Math.round(offsetDiffH(tz)*2)/2;
+  if(h===0)return{label:'Same as IST',cls:'diff-zero'};
+  return{label:(h>0?'+':'')+h+'h from IST',cls:h>0?'diff-pos':'diff-neg'};
+}
+
+function onGlobalSlide(val){
+  globalOffset=parseInt(val);
+  const h=Math.round(globalOffset/60);
+  const offsetEl=document.getElementById('offset-val');
+  const resetBtn=document.getElementById('reset-btn');
+  if(offsetEl)offsetEl.textContent=globalOffset===0?'Now':(h>0?'+'+h+'h':h+'h');
+  if(resetBtn)resetBtn.classList.toggle('visible',globalOffset!==0);
+  updateAllCards();
+  updateISTTravel();
+}
+
+function resetSlider(){
+  globalOffset=0;
+  document.getElementById('globalSlider').value=0;
+  onGlobalSlide(0);
+}
+
+function updateISTTravel(){
+  const ist=getTime('Asia/Kolkata',globalOffset);
+  const el=document.getElementById('ist-travel');
+  if(el)el.textContent=ist.time+' · '+ist.date;
+}
+
+function updateAllCards(){clients.forEach(c=>updateCard(c.id));}
+
+function updateCard(id){
+  const c=clients.find(x=>x.id===id);if(!c)return;
+  const t=getTime(c.tz,globalOffset);
+  const g=n=>document.getElementById(n);
+  if(g('ct-'+id))g('ct-'+id).textContent=t.time;
+  if(g('cd-'+id))g('cd-'+id).textContent=t.date;
+}
+
+function addClient(name,tz,silent){
+  name=name||document.getElementById('clientName').value.trim();
+  tz=tz||document.getElementById('tzSelect').value;
+  if(!name||!tz){if(!silent)alert('Please enter a name and select a time zone.');return false;}
+  clients.push({id:nextId++,name,tz,colorIdx:nextColor%COLORS.length});
+  nextColor=(nextColor+1)%COLORS.length;
+  save();
+  if(!silent){document.getElementById('clientName').value='';document.getElementById('tzSelect').value='';render();}
+  return true;
+}
+
+function removeClient(id){
+  clients=clients.filter(c=>c.id!==id);save();render();
+}
+
+// selected tz value for edit modal
+let editSelectedTZ = '';
+
+function renderEditTZPicker(currentTZ, showMore) {
+  const ALL = [
+    {group:'Americas', zones: AMERICAS},
+    {group:'Europe', zones: EUROPE},
+    {group:'Middle East & Asia', zones: ASIA},
+    {group:'Pacific', zones: PACIFIC},
+  ];
+  const inAmericas = AMERICAS.some(z => z.tz === currentTZ);
+  const expanded = showMore || !inAmericas;
+
+  let html = '';
+  ALL.forEach((section, si) => {
+    const isAmericas = si === 0;
+    const hidden = !isAmericas && !expanded;
+    if (hidden) return;
+    if (si > 0) html += '<div style="height:0.5px;background:var(--border);"></div>';
+    html += `<div style="padding:8px 10px;">
+      <div style="font-size:11px;color:var(--text3);font-weight:500;text-transform:uppercase;letter-spacing:0.04em;margin-bottom:6px;">${section.group}</div>
+      <div class="tz-radio-group">`;
+    section.zones.forEach(z => {
+      const rid = 'er_' + z.tz.replace(/[^a-zA-Z0-9]/g,'_');
+      const checked = z.tz === currentTZ ? 'checked' : '';
+      html += `<div class="tz-radio-item" onclick="editPickTZ('${z.tz}')">
+        <input type="radio" name="editTzRadio" id="${rid}" value="${z.tz}" ${checked}>
+        <label for="${rid}">${z.label}</label>
+      </div>`;
+    });
+    html += '</div></div>';
+  });
+
+  html += '<div style="height:0.5px;background:var(--border);"></div>';
+  if (expanded) {
+    html += `<button type="button" onclick="editToggleMore(false)" style="width:100%;padding:8px;font-size:12px;color:var(--purple-text);background:var(--purple-bg);border:none;cursor:pointer;">- Show fewer zones</button>`;
+  } else {
+    html += `<button type="button" onclick="editToggleMore(true)" style="width:100%;padding:8px;font-size:12px;color:var(--purple-text);background:var(--purple-bg);border:none;cursor:pointer;">+ View more zones</button>`;
+  }
+
+  document.getElementById('editTzPicker').innerHTML = html;
+}
+
+function editPickTZ(tz) {
+  editSelectedTZ = tz;
+  // update all radios
+  document.querySelectorAll('input[name=editTzRadio]').forEach(r => {
+    r.checked = r.value === tz;
+  });
+}
+
+function editToggleMore(show) {
+  renderEditTZPicker(editSelectedTZ, show);
+  // re-check selected after re-render
+  document.querySelectorAll('input[name=editTzRadio]').forEach(r => {
+    r.checked = r.value === editSelectedTZ;
+  });
+}
+
+function openEdit(id){
+  const c=clients.find(x=>x.id===id);if(!c)return;
+  document.getElementById('editId').value=id;
+  document.getElementById('editName').value=c.name;
+  editSelectedTZ = c.tz;
+  renderEditTZPicker(c.tz, false);
+  document.getElementById('editModal').style.display='flex';
+  setTimeout(()=>document.getElementById('editName').focus(),50);
+}
+
+function closeEdit(){document.getElementById('editModal').style.display='none';}
+
+function saveEdit(){
+  const id=parseInt(document.getElementById('editId').value);
+  const name=document.getElementById('editName').value.trim();
+  const tz=editSelectedTZ;
+  if(!name||!tz){alert('Name and timezone are required.');return;}
+  const c=clients.find(x=>x.id===id);if(!c)return;
+  c.name=name;c.tz=tz;
+  save();render();closeEdit();
+  showToast('Client updated.');
+}
+
+function render(){
+  const grid=document.getElementById('clientGrid');
+  if(!clients.length){grid.innerHTML='<div class="empty">No clients yet — add one above or import a CSV.</div>';return;}
+  grid.innerHTML=clients.map(c=>{
+    const col=COLORS[c.colorIdx%COLORS.length];
+    const t=getTime(c.tz,globalOffset);
+    const b=diffBadge(c.tz);
+    return`<div class="card" id="card-${c.id}">
+      <div class="card-actions">
+        <button class="card-icon-btn" title="Edit" onclick="openEdit(${c.id})">
+          <svg width="13" height="13" viewBox="0 0 16 16" fill="none"><path d="M11.5 2.5l2 2L5 13H3v-2L11.5 2.5z" stroke="var(--text2)" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round"/></svg>
+        </button>
+        <button class="card-icon-btn del" title="Delete" onclick="removeClient(${c.id})">
+          <svg width="13" height="13" viewBox="0 0 16 16" fill="none"><path d="M2 4h12M5 4V2h6v2M6 7v5M10 7v5M3 4l1 9a1 1 0 001 1h6a1 1 0 001-1l1-9" stroke="#A32D2D" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round"/></svg>
+        </button>
+      </div>
+      <div class="client-initial" style="background:${col.bg};color:${col.text}">${initials(c.name)}</div>
+      <div class="client-name">${c.name}</div>
+      <div class="tz-label">${tzShort(c.tz)}</div>
+      <div class="client-time" id="ct-${c.id}">${t.time}</div>
+      <div class="client-date" id="cd-${c.id}">${t.date}</div>
+      <span class="badge ${b.cls}">${b.label}</span>
+    </div>`;
+  }).join('');
+}
+
+function exportXLSX(){
+  const wb=XLSX.utils.book_new();
+  const ws1=XLSX.utils.aoa_to_sheet([['name','timezone'],...clients.map(c=>[c.name,c.tz])]);
+  ws1['!cols']=[{wch:28},{wch:24}];
+  XLSX.utils.book_append_sheet(wb,ws1,'My Clients');
+  const ws2=XLSX.utils.aoa_to_sheet([
+    ['City / Region','Abbreviation','Timezone code (use in the timezone column)'],
+    ...TZ_LIST.map(t=>[t.label,tzShort(t.tz),t.tz])
+  ]);
+  ws2['!cols']=[{wch:26},{wch:14},{wch:36}];
+  XLSX.utils.book_append_sheet(wb,ws2,'Timezone Cheat Sheet');
+  XLSX.writeFile(wb,'my-clients.xlsx');
+  showToast('XLSX exported — see the "Timezone Cheat Sheet" tab for codes.');
+}
+
+function importCSV(input){
+  const file=input.files[0];if(!file)return;
+  const reader=new FileReader();
+  reader.onload=e=>{
+    const lines=e.target.result.trim().split('\n');
+    let added=0,skipped=0,errors=0;
+    lines.forEach((line,i)=>{
+      if(i===0&&line.toLowerCase().includes('name'))return;
+      const parts=line.split(',');
+      if(parts.length<2){errors++;return;}
+      const name=parts[0].trim().replace(/^"|"$/g,'').replace(/""/g,'"');
+      const tz=parts[1].trim().replace(/^"|"$/g,'');
+      if(!name||!tz||!VALID_TZ.includes(tz)){errors++;return;}
+      if(clients.some(c=>c.name.toLowerCase()===name.toLowerCase()&&c.tz===tz)){skipped++;return;}
+      addClient(name,tz,true);added++;
+    });
+    save();render();
+    const msg=[];
+    if(added)msg.push(`${added} client${added>1?'s':''} added`);
+    if(skipped)msg.push(`${skipped} already existed`);
+    if(errors)msg.push(`${errors} row${errors>1?'s':''} skipped`);
+    showToast(msg.join(' · ')||'Nothing new to import.',added>0?'success':'error');
+    input.value='';
+  };
+  reader.readAsText(file);
+}
+
+const dz=document.getElementById('dropZone');
+dz.addEventListener('dragover',e=>{e.preventDefault();dz.classList.add('drag-over');});
+dz.addEventListener('dragleave',()=>dz.classList.remove('drag-over'));
+dz.addEventListener('drop',e=>{
+  e.preventDefault();dz.classList.remove('drag-over');
+  const f=e.dataTransfer.files[0];
+  if(f&&f.name.endsWith('.csv'))importCSV({files:[f]});
+  else showToast('Please drop a .csv file.','error');
+});
+
+function tick(){
+  const ist=getTime('Asia/Kolkata',0);
+  const pill=document.getElementById('ist-pill');
+  if(pill)pill.textContent='Your time (IST) · '+ist.time;
+  if(globalOffset===0){updateAllCards();updateISTTravel();}
+}
+
+
+const AMERICAS = [
+  {tz:'America/New_York',   label:'Eastern Time'},
+  {tz:'America/Chicago',    label:'Central Time'},
+  {tz:'America/Denver',     label:'Mountain Time'},
+  {tz:'America/Los_Angeles',label:'Pacific Time'},
+  {tz:'America/Toronto',    label:'Eastern Time (Canada)'},
+  {tz:'America/Vancouver',  label:'Pacific Time (Canada)'},
+  {tz:'America/Sao_Paulo',  label:'Brasilia Time'},
+];
+const EUROPE = [
+  {tz:'Europe/London',    label:'Greenwich Mean Time'},
+  {tz:'Europe/Paris',     label:'Central European Time'},
+  {tz:'Europe/Berlin',    label:'Central European Time (Germany)'},
+  {tz:'Europe/Amsterdam', label:'Central European Time (Netherlands)'},
+  {tz:'Europe/Stockholm', label:'Central European Time (Sweden)'},
+  {tz:'Europe/Zurich',    label:'Central European Time (Switzerland)'},
+  {tz:'Europe/Moscow',    label:'Moscow Standard Time'},
+];
+const ASIA = [
+  {tz:'Asia/Dubai',       label:'Gulf Standard Time'},
+  {tz:'Asia/Kolkata',     label:'India Standard Time'},
+  {tz:'Asia/Singapore',   label:'Singapore Time'},
+  {tz:'Asia/Hong_Kong',   label:'Hong Kong Time'},
+  {tz:'Asia/Shanghai',    label:'China Standard Time'},
+  {tz:'Asia/Tokyo',       label:'Japan Standard Time'},
+  {tz:'Asia/Seoul',       label:'Korea Standard Time'},
+];
+const PACIFIC = [
+  {tz:'Australia/Sydney',   label:'Australian Eastern Time'},
+  {tz:'Pacific/Auckland',   label:'New Zealand Standard Time'},
+];
+
+function buildRadioGroup(containerId, zones){
+  const el = document.getElementById(containerId);
+  if(!el) return;
+  el.innerHTML = zones.map(z => `
+    <div class="tz-radio-item" onclick="selectTZ('${z.tz}','${z.label.replace(/'/g,"\\'")}')">
+      <input type="radio" name="tzRadio" id="r_${z.tz.replace(/\//g,'_')}" value="${z.tz}">
+      <label for="r_${z.tz.replace(/\//g,'_')}">${z.label}</label>
+    </div>`).join('');
+}
+
+function initTZPicker(){
+  buildRadioGroup('americasGroup', AMERICAS);
+  buildRadioGroup('europeGroup', EUROPE);
+  buildRadioGroup('asiaGroup', ASIA);
+  buildRadioGroup('pacificGroup', PACIFIC);
+}
+
+function selectTZ(tz, label){
+  document.getElementById('tzSelect').value = tz;
+  document.getElementById('tzTriggerLabel').textContent = label;
+  document.getElementById('tzTriggerLabel').style.color = 'var(--text)';
+  // check the radio
+  const r = document.getElementById('r_'+tz.replace(/\//g,'_'));
+  if(r) r.checked = true;
+  closeTZPicker();
+}
+
+function toggleTZPicker(){
+  const p = document.getElementById('tzPicker');
+  p.style.display = p.style.display === 'none' ? 'block' : 'none';
+}
+function closeTZPicker(){ document.getElementById('tzPicker').style.display='none'; }
+
+function toggleMoreZones(){
+  const more = document.getElementById('moreZones');
+  const btn = document.getElementById('moreZonesBtn');
+  const open = more.style.display === 'none';
+  more.style.display = open ? 'block' : 'none';
+  btn.textContent = open ? '- Show fewer zones' : '+ View more zones';
+}
+
+// close picker when clicking outside
+document.addEventListener('click', e => {
+  const picker = document.getElementById('tzPicker');
+  const trigger = document.getElementById('tzTrigger');
+  if(picker && trigger && !picker.contains(e.target) && !trigger.contains(e.target)){
+    closeTZPicker();
+  }
+});
+
+// patch addClient to read from hidden input
+
+initTZPicker();
+render();updateISTTravel();tick();
+setInterval(tick,1000);
+</script>
+
+<!-- edit modal -->
+<div id="editModal" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,0.35);z-index:200;align-items:center;justify-content:center;">
+  <div style="background:var(--bg);border-radius:14px;border:0.5px solid var(--border2);padding:1.5rem;width:340px;max-width:92vw;max-height:90vh;overflow-y:auto;">
+    <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:1.25rem;">
+      <span style="font-size:15px;font-weight:500;color:var(--text);">Edit client</span>
+      <button onclick="closeEdit()" style="background:none;border:none;cursor:pointer;color:var(--text3);font-size:18px;line-height:1;">&#x2715;</button>
+    </div>
+    <input type="hidden" id="editId" />
+    <div style="margin-bottom:12px;">
+      <div style="font-size:12px;color:var(--text2);margin-bottom:5px;">Client name</div>
+      <input type="text" id="editName" style="width:100%;height:34px;font-size:14px;padding:0 10px;border-radius:8px;border:0.5px solid var(--border2);background:var(--bg);color:var(--text);outline:none;" onkeydown="if(event.key==='Enter')saveEdit()" />
+    </div>
+    <div style="margin-bottom:1.25rem;">
+      <div style="font-size:12px;color:var(--text2);margin-bottom:5px;">Time zone</div>
+      <div id="editTzPicker" style="border:0.5px solid var(--border2);border-radius:8px;overflow:hidden;"></div>
+    </div>
+    <div style="display:flex;gap:8px;justify-content:flex-end;">
+      <button onclick="closeEdit()" style="height:32px;padding:0 14px;font-size:13px;border-radius:8px;border:0.5px solid var(--border2);background:var(--bg);color:var(--text);cursor:pointer;">Cancel</button>
+      <button onclick="saveEdit()" style="height:32px;padding:0 14px;font-size:13px;font-weight:500;border-radius:8px;border:none;background:#EEEDFE;color:#534AB7;cursor:pointer;">Save</button>
+    </div>
+  </div>
+</div>
+</body>
+</html>
